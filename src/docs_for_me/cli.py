@@ -11,26 +11,38 @@ from docs_for_me.render.markdown import write_markdown
 from docs_for_me.render.status import StatusReporter
 
 APP_HELP = """
-Create Markdown guides for files, folders, and Git changes.
+\b
+docs-for-me
+===========
 
+Make readable Markdown guides for files, folders, and Git changes.
+
+\b
 Install once:
 
   npm install -g docs-for-me
 
-Then run:
+Start here:
 
-  docs-for-me file ".\\app\\Http\\Controllers\\Api\\AnalyticsController.php" --ai none --out analytics-guide.md
-  docs-for-me folder ".\\app\\Http\\Controllers\\Api" --ai none --out api-guide.md
+  docs-for-me file PATH --ai none --out file-guide.md
+
+  docs-for-me folder PATH --ai none --out folder-guide.md
+
   docs-for-me changes --ai none --out changes-guide.md
 
-Optional one-time trial:
+\b
+AI choices:
+
+  --ai none      Local and fast. No AI provider needed.
+
+  --ai opencode  Uses your installed OpenCode setup for deeper writing.
+
+\b
+One-time trial:
 
   npx docs-for-me --help
 
-AI modes:
-
-  --ai none      Local, fast, no AI provider needed.
-  --ai opencode  Uses your installed OpenCode setup for deeper writing.
+Tip: wrap paths in quotes when they contain spaces or special characters.
 """
 
 app = typer.Typer(

@@ -13,7 +13,7 @@
     "url": "https://github.com/manwelAC/docs-for-me/issues"
   },
   "bin": {
-    "docs-for-me": "./bin/docs-for-me.cjs"
+    "docs-for-me": "./bin/docs-for-me"
   },
   "files": [
     "bin/",
@@ -24,7 +24,7 @@
   "scripts": {
     "build:exe:win": "powershell -ExecutionPolicy Bypass -File scripts/build-windows-exe.ps1",
     "pack:npm": "npm pack",
-    "test:npm-local": "node bin/docs-for-me.cjs --help"
+    "test:npm-local": "node bin/docs-for-me --help"
   },
   "keywords": [
     "documentation",
