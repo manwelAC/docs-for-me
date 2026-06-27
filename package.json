@@ -1,0 +1,46 @@
+{
+  "name": "docs-for-me",
+  "version": "0.1.0",
+  "description": "Create programmer-friendly docs for files, folders, and Git changes.",
+  "license": "MIT",
+  "author": "John Manuel A. Cuerdo",
+  "homepage": "https://github.com/manwelAC/docs-for-me#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/manwelAC/docs-for-me.git"
+  },
+  "bugs": {
+    "url": "https://github.com/manwelAC/docs-for-me/issues"
+  },
+  "bin": {
+    "docs-for-me": "./bin/docs-for-me.cjs"
+  },
+  "files": [
+    "bin/",
+    "prebuilt/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build:exe:win": "powershell -ExecutionPolicy Bypass -File scripts/build-windows-exe.ps1",
+    "pack:npm": "npm pack",
+    "test:npm-local": "node bin/docs-for-me.cjs --help"
+  },
+  "keywords": [
+    "documentation",
+    "developer-tools",
+    "cli",
+    "git",
+    "opencode",
+    "markdown"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ]
+}

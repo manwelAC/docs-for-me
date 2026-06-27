@@ -5,7 +5,7 @@
 <h1 align="center">docs-for-me</h1>
 
 <p align="center">
-  A Python CLI that creates programmer-friendly guides for files, folders, and Git changes.
+  A CLI that creates programmer-friendly guides for files, folders, and Git changes.
 </p>
 
 It is meant for the everyday developer moment where you want to know:
@@ -17,6 +17,27 @@ It is meant for the everyday developer moment where you want to know:
 
 The output is Markdown, so it can be read in a terminal, saved beside a project,
 or deleted after review.
+
+## Install
+
+The intended install path is npm:
+
+```powershell
+npx docs-for-me --help
+```
+
+Or install it inside a project:
+
+```powershell
+npm install --save-dev docs-for-me
+npx docs-for-me changes --ai none --out changes-guide.md
+```
+
+This is the main distribution goal: users should not need to install Python,
+pip, or pipx just to use the tool.
+
+The first npm release ships with a bundled Windows x64 executable. macOS and
+Linux builds can be added after the Windows release flow is stable.
 
 ## What It Does
 
@@ -35,28 +56,6 @@ It has two modes:
 
 Static mode is useful when you want quick local output. OpenCode mode is useful
 when you want a more natural explanation.
-
-## Install For Local Development
-
-From this repository:
-
-```powershell
-python -m venv .venv
-.venv\Scripts\activate
-pip install -e . pytest
-```
-
-Check that the CLI works:
-
-```powershell
-docs-for-me --help
-```
-
-Run tests:
-
-```powershell
-pytest
-```
 
 ## Basic Usage
 
@@ -117,6 +116,39 @@ When OpenCode is working, the generated Markdown should not contain:
 ```markdown
 - **AI:** unavailable or disabled (`opencode`)
 ```
+
+## Contributor Setup
+
+The core CLI is written in Python, but npm is the user-facing package path.
+Use this setup only when developing `docs-for-me` itself:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\activate
+pip install -e . pytest
+pytest
+```
+
+To build the Windows executable that the npm package runs:
+
+```powershell
+npm run build:exe:win
+```
+
+Then test the npm wrapper locally:
+
+```powershell
+npm run test:npm-local
+```
+
+The npm wrapper expects the executable here:
+
+```text
+prebuilt/win32-x64/docs-for-me.exe
+```
+
+When publishing to npm, that executable is included so users can run
+`npx docs-for-me ...` without setting up Python.
 
 If that line appears, `docs-for-me` fell back to static mode.
 

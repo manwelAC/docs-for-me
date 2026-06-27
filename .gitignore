@@ -6,7 +6,9 @@ __pycache__/
 .mypy_cache/
 build/
 dist/
+prebuilt/
 *.egg-info/
+*.tgz
 
 # Generated guide output
 *-doc.md
