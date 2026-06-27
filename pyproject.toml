@@ -1,0 +1,54 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "docs-for-me"
+version = "0.1.0"
+description = "Create docs for files, folders, and Git changes."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+  { name = "John Manuel A. Cuerdo" }
+]
+keywords = [
+  "documentation",
+  "developer-tools",
+  "cli",
+  "git",
+  "opencode",
+  "markdown",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Documentation",
+  "Topic :: Software Development :: Documentation",
+  "Topic :: Software Development :: Version Control :: Git",
+]
+dependencies = [
+  "typer>=0.12.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/manwelAC/docs-for-me"
+Repository = "https://github.com/manwelAC/docs-for-me"
+Issues = "https://github.com/manwelAC/docs-for-me/issues"
+
+[project.scripts]
+docs-for-me = "docs_for_me.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/docs_for_me"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]

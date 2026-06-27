@@ -1,0 +1,208 @@
+from pathlib import Path
+from collections import Counter
+
+from docs_for_me.ai.base import AIProvider, ProgressCallback
+from docs_for_me.core.content_signals import ContentSignals, analyze_content, extract_path_terms
+from docs_for_me.core.language import detect_language
+from docs_for_me.core.scanner import ScannedFile, scan_folder
+from docs_for_me.prompts import build_folder_prompt
+
+
+def document_folder(path: Path, provider: AIProvider, on_progress: ProgressCallback | None = None) -> str:
+    files = scan_folder(path)
+    prompt = build_folder_prompt(path, files)
+    ai_response = provider.generate(prompt, files=[str(file.path) for file in files[:25]], on_progress=on_progress)
+
+    if ai_response.used_ai and ai_response.text:
+        return ai_response.text
+
+    return _fallback_folder_doc(path, files, provider.name)
+
+
+def _fallback_folder_doc(path: Path, files: list[ScannedFile], provider_name: str) -> str:
+    language_counts: dict[str, int] = {}
+    for item in files:
+        language = detect_language(item.path)
+        language_counts[language] = language_counts.get(language, 0) + 1
+
+    folder_signals = _analyze_folder_files(files)
+    areas = _folder_areas(files)
+    confidence = _folder_confidence(folder_signals)
+
+    doc = [
+        f"# {path.name}",
+        "",
+        f"- **Path:** `{path}`",
+        f"- **Files documented:** {len(files)}",
+        f"- **AI:** unavailable or disabled (`{provider_name}`)",
+        "",
+        "## Overview",
+        "",
+        _folder_purpose(path, folder_signals, areas),
+        "",
+        f"**Confidence:** {confidence}",
+        "",
+        "## What This Is Based On",
+        "",
+    ]
+
+    if folder_signals.domain_terms:
+        doc.append("- Repeated domain terms: " + ", ".join(folder_signals.domain_terms[:12]))
+    if folder_signals.actions:
+        doc.append("- Common actions: " + ", ".join(folder_signals.actions[:10]))
+    if folder_signals.labels:
+        doc.append("- Readable labels/text: " + "; ".join(f"`{label}`" for label in folder_signals.labels[:10]))
+    if folder_signals.endpoints:
+        doc.append("- Paths or URLs: " + "; ".join(f"`{endpoint}`" for endpoint in folder_signals.endpoints[:10]))
+    if folder_signals.comments:
+        doc.append("- Comments: " + "; ".join(f"`{comment}`" for comment in folder_signals.comments[:6]))
+
+    if not any([folder_signals.domain_terms, folder_signals.actions, folder_signals.labels, folder_signals.endpoints, folder_signals.comments]):
+        doc.append("- No strong content signals were detected from sampled files.")
+
+    doc.extend(["", "## What Is Inside", ""])
+    if areas:
+        doc.extend(f"- {area}" for area in areas[:14])
+    else:
+        doc.append("- No clear areas were detected from file paths.")
+
+    doc.extend([
+        "",
+        "## Languages",
+        "",
+    ])
+
+    if language_counts:
+        for language, count in sorted(language_counts.items()):
+            doc.append(f"- {language}: {count}")
+    else:
+        doc.append("- No files found.")
+
+    doc.extend(["", "## Key Files", ""])
+    for item in _important_files(files):
+        doc.append(f"- `{item.relative_path}` ({item.size} bytes)")
+
+    doc.extend(["", "## Files", ""])
+    doc.extend(f"- `{item.relative_path}` ({item.size} bytes)" for item in files)
+    return "\n".join(doc) + "\n"
+
+
+def _analyze_folder_files(files: list[ScannedFile], max_files: int = 40, max_bytes: int = 80_000) -> ContentSignals:
+    domain_terms: Counter[str] = Counter()
+    actions: Counter[str] = Counter()
+    labels: list[str] = []
+    endpoints: list[str] = []
+    endpoint_topics: Counter[str] = Counter()
+    entities: Counter[str] = Counter()
+    comments: list[str] = []
+
+    for item in files[:max_files]:
+        domain_terms.update({term: 3 for term in extract_path_terms(item.relative_path)})
+
+        if item.size > max_bytes:
+            continue
+
+        content = item.path.read_text(encoding="utf-8", errors="replace")
+        signals = analyze_content(item.relative_path, content, detect_language(item.path))
+        domain_terms.update(signals.domain_terms)
+        actions.update(signals.actions)
+        labels.extend(_new_values(labels, signals.labels))
+        endpoints.extend(_new_values(endpoints, signals.endpoints))
+        endpoint_topics.update(signals.endpoint_topics)
+        entities.update(signals.entities)
+        comments.extend(_new_values(comments, signals.comments))
+
+    return ContentSignals(
+        purpose="",
+        domain_terms=[term for term, _count in domain_terms.most_common(15)],
+        actions=[action for action, _count in actions.most_common(12)],
+        labels=labels[:16],
+        endpoints=endpoints[:16],
+        endpoint_topics=[topic for topic, _count in endpoint_topics.most_common(12)],
+        entities=[entity for entity, _count in entities.most_common(12)],
+        comments=comments[:10],
+    )
+
+
+def _folder_purpose(path: Path, signals: ContentSignals, areas: list[str]) -> str:
+    subject_terms = _dedupe(areas[:6] + signals.domain_terms[:6])[:7]
+    action_terms = signals.actions[:5]
+
+    if not subject_terms:
+        return "This folder appears to contain source files, but there were not enough readable signals to infer a specific responsibility."
+
+    subject = _human_join(subject_terms)
+    if action_terms:
+        actions = _human_join(action_terms)
+        return f"This folder appears to center on {subject}. Across sampled files, it likely supports actions such as {actions}."
+
+    return f"This folder appears to center on {subject}."
+
+
+def _folder_confidence(signals: ContentSignals) -> str:
+    score = 0
+    score += 1 if signals.domain_terms else 0
+    score += 1 if signals.actions else 0
+    score += 1 if signals.labels else 0
+    score += 1 if signals.endpoints else 0
+    score += 1 if signals.comments else 0
+
+    if score >= 4:
+        return "High"
+    if score >= 2:
+        return "Medium"
+    return "Low"
+
+
+def _important_files(files: list[ScannedFile], limit: int = 12) -> list[ScannedFile]:
+    preferred_names = {"page", "layout", "index", "main", "app", "server", "router", "routes", "config"}
+
+    def score(file: ScannedFile) -> tuple[int, int]:
+        stem = file.path.stem.lower()
+        name_score = 1 if stem in preferred_names else 0
+        return (name_score, file.size)
+
+    return sorted(files, key=score, reverse=True)[:limit]
+
+
+def _folder_areas(files: list[ScannedFile]) -> list[str]:
+    counts: Counter[str] = Counter()
+    ignored = {"page", "layout", "providers", "globals", "favicon"}
+
+    for file in files:
+        parts = [part.strip("()[]{}") for part in file.relative_path.parts]
+        for part in parts[:-1]:
+            words = [word for word in extract_path_terms(Path(part)) if word not in ignored]
+            if words:
+                counts.update({" ".join(words): 3})
+
+        stem_words = [word for word in extract_path_terms(Path(file.path.stem)) if word not in ignored]
+        if stem_words:
+            counts.update({" ".join(stem_words): 1})
+
+    return [area for area, _count in counts.most_common(16)]
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    seen = set()
+    deduped: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        deduped.append(value)
+    return deduped
+
+
+def _new_values(existing: list[str], incoming: list[str]) -> list[str]:
+    existing_set = set(existing)
+    return [value for value in incoming if value not in existing_set]
+
+
+def _human_join(values: list[str]) -> str:
+    readable = [value.replace("_", " ") for value in values]
+    if len(readable) == 1:
+        return readable[0]
+    if len(readable) == 2:
+        return f"{readable[0]} and {readable[1]}"
+    return ", ".join(readable[:-1]) + f", and {readable[-1]}"

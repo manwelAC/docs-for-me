@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+build/
+dist/
+*.egg-info/
+
+# Generated guide output
+*-doc.md
+*-docs.md
+*-guide.md
+*-guide-*.md
+changes-ai-guide.md
+changes-guide.md
