@@ -68,3 +68,36 @@ def test_document_folder_uses_single_context_file_for_ai(tmp_path: Path) -> None
 
     assert markdown == "# AI folder guide\n"
     assert provider.files is not None
+
+
+def test_document_folder_adapts_large_folder_into_main_areas(tmp_path: Path) -> None:
+    app = tmp_path / "app"
+    controllers = app / "Http" / "Controllers"
+    models = app / "Models"
+    services = app / "Services"
+    controllers.mkdir(parents=True)
+    models.mkdir(parents=True)
+    services.mkdir(parents=True)
+
+    for index in range(18):
+        (controllers / f"BookingController{index}.php").write_text(
+            'function searchBookings() { return "/api/bookings"; }',
+            encoding="utf-8",
+        )
+        (models / f"Guest{index}.php").write_text(
+            "class Guest { public string $status = 'Checked In'; }",
+            encoding="utf-8",
+        )
+        (services / f"PaymentService{index}.php").write_text(
+            "function createPayment() { return true; }",
+            encoding="utf-8",
+        )
+
+    messages: list[str] = []
+    markdown = document_folder(app, NoAIProvider(), on_progress=messages.append)
+
+    assert "## Main Areas" in markdown
+    assert "### Http" in markdown
+    assert "### Models" in markdown
+    assert "### Services" in markdown
+    assert "Large folder detected" in "\n".join(messages)

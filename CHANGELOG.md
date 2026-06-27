@@ -6,6 +6,7 @@ All notable changes to `docs-for-me` will be documented in this file.
 
 - Fix folder AI mode so OpenCode receives one generated folder-context attachment.
 - Add test coverage for folder AI context generation.
+- Add adaptive local folder summaries for larger folders.
 
 ## 0.1.1 - 2026-06-27
 

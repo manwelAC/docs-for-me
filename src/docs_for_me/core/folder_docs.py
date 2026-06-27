@@ -1,5 +1,7 @@
-from pathlib import Path
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
+from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from docs_for_me.ai.base import AIProvider, ProgressCallback
@@ -7,6 +9,18 @@ from docs_for_me.core.content_signals import ContentSignals, analyze_content, ex
 from docs_for_me.core.language import detect_language
 from docs_for_me.core.scanner import ScannedFile, scan_folder
 from docs_for_me.prompts import build_folder_prompt
+
+
+ADAPTIVE_CHUNK_FILE_THRESHOLD = 40
+MAX_LOCAL_WORKERS = 4
+
+
+@dataclass(frozen=True)
+class FolderAreaSummary:
+    name: str
+    files: list[ScannedFile]
+    signals: ContentSignals
+    languages: dict[str, int]
 
 
 def document_folder(path: Path, provider: AIProvider, on_progress: ProgressCallback | None = None) -> str:
@@ -24,7 +38,7 @@ def document_folder(path: Path, provider: AIProvider, on_progress: ProgressCallb
     if ai_response.used_ai and ai_response.text:
         return ai_response.text
 
-    return _fallback_folder_doc(path, files, provider.name)
+    return _fallback_folder_doc(path, files, provider.name, on_progress=on_progress)
 
 
 def _folder_context(path: Path, files: list[ScannedFile], max_files: int = 35, max_bytes: int = 30_000) -> str:
@@ -68,7 +82,12 @@ def _folder_context(path: Path, files: list[ScannedFile], max_files: int = 35, m
     return "\n".join(sections)
 
 
-def _fallback_folder_doc(path: Path, files: list[ScannedFile], provider_name: str) -> str:
+def _fallback_folder_doc(
+    path: Path,
+    files: list[ScannedFile],
+    provider_name: str,
+    on_progress: ProgressCallback | None = None,
+) -> str:
     language_counts: dict[str, int] = {}
     for item in files:
         language = detect_language(item.path)
@@ -76,6 +95,7 @@ def _fallback_folder_doc(path: Path, files: list[ScannedFile], provider_name: st
 
     folder_signals = _analyze_folder_files(files)
     areas = _folder_areas(files)
+    area_summaries = _adaptive_area_summaries(files, on_progress=on_progress)
     confidence = _folder_confidence(folder_signals)
 
     doc = [
@@ -115,6 +135,11 @@ def _fallback_folder_doc(path: Path, files: list[ScannedFile], provider_name: st
     else:
         doc.append("- No clear areas were detected from file paths.")
 
+    if area_summaries:
+        doc.extend(["", "## Main Areas", ""])
+        for summary in area_summaries:
+            doc.extend(_render_area_summary(summary))
+
     doc.extend([
         "",
         "## Languages",
@@ -136,6 +161,97 @@ def _fallback_folder_doc(path: Path, files: list[ScannedFile], provider_name: st
     return "\n".join(doc) + "\n"
 
 
+def _adaptive_area_summaries(
+    files: list[ScannedFile],
+    on_progress: ProgressCallback | None = None,
+) -> list[FolderAreaSummary]:
+    if len(files) <= ADAPTIVE_CHUNK_FILE_THRESHOLD:
+        return []
+
+    chunks = _folder_chunks(files)
+    if len(chunks) <= 1:
+        return []
+
+    if on_progress:
+        on_progress(f"Large folder detected. Analyzing {len(chunks)} areas locally...")
+
+    summaries_by_name: dict[str, FolderAreaSummary] = {}
+    workers = min(MAX_LOCAL_WORKERS, len(chunks))
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        future_to_name = {
+            executor.submit(_summarize_area, name, chunk_files): name
+            for name, chunk_files in chunks
+        }
+
+        completed = 0
+        for future in as_completed(future_to_name):
+            name = future_to_name[future]
+            summaries_by_name[name] = future.result()
+            completed += 1
+            if on_progress:
+                on_progress(f"Analyzed area {completed}/{len(chunks)}: {name}")
+
+    return [summaries_by_name[name] for name, _chunk_files in chunks if name in summaries_by_name]
+
+
+def _folder_chunks(files: list[ScannedFile]) -> list[tuple[str, list[ScannedFile]]]:
+    grouped: dict[str, list[ScannedFile]] = {}
+
+    for file in files:
+        parts = file.relative_path.parts
+        name = parts[0].strip("()[]{}") if len(parts) > 1 else "root files"
+        grouped.setdefault(name or "root files", []).append(file)
+
+    return sorted(grouped.items(), key=lambda item: (-len(item[1]), item[0]))[:16]
+
+
+def _summarize_area(name: str, files: list[ScannedFile]) -> FolderAreaSummary:
+    languages: dict[str, int] = {}
+    for item in files:
+        language = detect_language(item.path)
+        languages[language] = languages.get(language, 0) + 1
+
+    return FolderAreaSummary(
+        name=name,
+        files=files,
+        signals=_analyze_folder_files(files, max_files=20, max_bytes=60_000),
+        languages=languages,
+    )
+
+
+def _render_area_summary(summary: FolderAreaSummary) -> list[str]:
+    areas = _folder_areas(summary.files)
+    purpose = _folder_purpose(Path(summary.name), summary.signals, areas)
+    key_files = _important_files(summary.files, limit=5)
+    language_text = ", ".join(f"{language}: {count}" for language, count in sorted(summary.languages.items()))
+
+    lines = [
+        f"### {summary.name}",
+        "",
+        f"- **Files:** {len(summary.files)}",
+    ]
+
+    if language_text:
+        lines.append(f"- **Languages:** {language_text}")
+
+    lines.extend([
+        f"- **Purpose:** {purpose}",
+    ])
+
+    if summary.signals.domain_terms:
+        lines.append("- **Main concepts:** " + ", ".join(summary.signals.domain_terms[:8]))
+    if summary.signals.actions:
+        lines.append("- **Common actions:** " + ", ".join(summary.signals.actions[:6]))
+    if summary.signals.endpoints:
+        lines.append("- **Paths or URLs:** " + "; ".join(f"`{endpoint}`" for endpoint in summary.signals.endpoints[:5]))
+    if key_files:
+        lines.append("- **Key files:** " + ", ".join(f"`{file.relative_path}`" for file in key_files))
+
+    lines.append("")
+    return lines
+
+
 def _analyze_folder_files(files: list[ScannedFile], max_files: int = 40, max_bytes: int = 80_000) -> ContentSignals:
     domain_terms: Counter[str] = Counter()
     actions: Counter[str] = Counter()
@@ -146,14 +262,14 @@ def _analyze_folder_files(files: list[ScannedFile], max_files: int = 40, max_byt
     comments: list[str] = []
 
     for item in files[:max_files]:
-        domain_terms.update({term: 3 for term in extract_path_terms(item.relative_path)})
+        domain_terms.update({term: 3 for term in _useful_terms(extract_path_terms(item.relative_path))})
 
         if item.size > max_bytes:
             continue
 
         content = item.path.read_text(encoding="utf-8", errors="replace")
         signals = analyze_content(item.relative_path, content, detect_language(item.path))
-        domain_terms.update(signals.domain_terms)
+        domain_terms.update(_useful_terms(signals.domain_terms))
         actions.update(signals.actions)
         labels.extend(_new_values(labels, signals.labels))
         endpoints.extend(_new_values(endpoints, signals.endpoints))
@@ -221,11 +337,11 @@ def _folder_areas(files: list[ScannedFile]) -> list[str]:
     for file in files:
         parts = [part.strip("()[]{}") for part in file.relative_path.parts]
         for part in parts[:-1]:
-            words = [word for word in extract_path_terms(Path(part)) if word not in ignored]
+            words = [word for word in _useful_terms(extract_path_terms(Path(part))) if word not in ignored]
             if words:
                 counts.update({" ".join(words): 3})
 
-        stem_words = [word for word in extract_path_terms(Path(file.path.stem)) if word not in ignored]
+        stem_words = [word for word in _useful_terms(extract_path_terms(Path(file.path.stem))) if word not in ignored]
         if stem_words:
             counts.update({" ".join(stem_words): 1})
 
@@ -246,6 +362,14 @@ def _dedupe(values: list[str]) -> list[str]:
 def _new_values(existing: list[str], incoming: list[str]) -> list[str]:
     existing_set = set(existing)
     return [value for value in incoming if value not in existing_set]
+
+
+def _useful_terms(values: list[str]) -> list[str]:
+    return [
+        value
+        for value in values
+        if len(value) > 2 and not any(character.isdigit() for character in value)
+    ]
 
 
 def _human_join(values: list[str]) -> str:
