@@ -80,6 +80,16 @@ def _compact_prompt_for_files(prompt: str) -> str:
             "Base the guide on the attached diff only."
         )
 
+    if "Write clear developer documentation for this exact folder." in prompt:
+        return (
+            "Return Markdown documentation for the attached folder context. "
+            "Do not create files. Do not edit files. Do not ask questions. "
+            "Write it like a practical programmer guide, not an audit. "
+            "Include these sections: Overview, What Is Inside, Main Areas, Important Files, How It Fits Together, and Reading Guide. "
+            "Do not include Risks or Editing Notes. "
+            "Base the documentation on the attached folder context only."
+        )
+
     marker = "\nFile content:\n"
     if marker not in prompt:
         return prompt
