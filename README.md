@@ -20,21 +20,37 @@ or deleted after review.
 
 ## Install
 
-The intended install path is npm:
+Install it with npm:
+
+```powershell
+npm install -g docs-for-me
+```
+
+Then run it anywhere:
+
+```powershell
+docs-for-me --help
+docs-for-me changes --ai none --out changes-guide.md
+```
+
+You can also install it inside one project:
+
+```powershell
+npm install --save-dev docs-for-me
+npm exec docs-for-me changes --ai none --out changes-guide.md
+```
+
+For a one-time trial without installing globally:
 
 ```powershell
 npx docs-for-me --help
 ```
 
-Or install it inside a project:
+Important: `npx docs-for-me` runs the package once. It does not permanently add
+`docs-for-me` as a command. If you want to type `docs-for-me ...` directly,
+install it globally with `npm install -g docs-for-me`.
 
-```powershell
-npm install --save-dev docs-for-me
-npx docs-for-me changes --ai none --out changes-guide.md
-```
-
-This is the main distribution goal: users should not need to install Python,
-pip, or pipx just to use the tool.
+Users do not need to install Python, pip, or pipx.
 
 The first npm release ships with a bundled Windows x64 executable. macOS and
 Linux builds can be added after the Windows release flow is stable.
@@ -148,7 +164,7 @@ prebuilt/win32-x64/docs-for-me.exe
 ```
 
 When publishing to npm, that executable is included so users can run
-`npx docs-for-me ...` without setting up Python.
+`docs-for-me ...` after `npm install -g docs-for-me` without setting up Python.
 
 If that line appears, `docs-for-me` fell back to static mode.
 
@@ -205,13 +221,10 @@ The code is provider-based, so more providers can be added later.
 
 ## Project Status
 
-`docs-for-me` is early-stage. It already works as a local CLI, but the package is
-not published yet.
+`docs-for-me` is early-stage. It is published on npm for Windows x64 first.
 
 Good next steps:
 
-- improve README and packaging metadata
-- add a `LICENSE`
 - add config file support
 - add more AI providers
-- publish to PyPI
+- add macOS and Linux npm builds
