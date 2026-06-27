@@ -78,7 +78,7 @@ when you want a more natural explanation.
 Document one file:
 
 ```powershell
-docs-for-me file "app/(dashboard)/bookings/page.tsx" --ai none --out bookings-doc.md
+docs-for-me file "app/(dashboard)/bookings/page.tsx" --ai none --out bookings-doc.md (--out is the output/ file name of your docs)
 ```
 
 Document one folder:
