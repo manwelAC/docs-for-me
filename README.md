@@ -8,9 +8,6 @@
   A Python CLI that creates programmer-friendly guides for files, folders, and Git changes.
 </p>
 
-`docs-for-me` is a Python CLI that creates programmer-friendly guides for files,
-folders, and Git changes.
-
 It is meant for the everyday developer moment where you want to know:
 
 - What is in this file?
