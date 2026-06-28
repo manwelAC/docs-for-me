@@ -2,6 +2,11 @@ from pathlib import Path
 from typing import Optional
 
 import typer
+from rich import box
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
 
 from docs_for_me.ai import build_provider
 from docs_for_me.core.file_docs import document_file
@@ -45,11 +50,96 @@ One-time trial:
 Tip: wrap paths in quotes when they contain spaces or special characters.
 """
 
+console = Console()
+
 app = typer.Typer(
     help=APP_HELP,
-    no_args_is_help=True,
+    context_settings={"help_option_names": ["--_internal-help"]},
     rich_markup_mode=None,
 )
+
+
+@app.callback(invoke_without_command=True)
+def main(
+    ctx: typer.Context,
+    help_requested: bool = typer.Option(False, "--help", "-h", help="Show help and exit.", is_eager=True),
+) -> None:
+    """Create docs for files, folders, and Git changes."""
+    if help_requested or ctx.invoked_subcommand is None:
+        _render_help()
+        raise typer.Exit()
+
+
+def _render_help() -> None:
+    title = Text()
+    title.append("docs-for-me", style="bold bright_cyan")
+    title.append("\n")
+    title.append("Turn Git changes into review guides and commit-ready messages.", style="white")
+
+    console.print()
+    console.print(
+        Panel(
+            title,
+            border_style="bright_cyan",
+            box=box.DOUBLE,
+            padding=(1, 4),
+        )
+    )
+
+    console.print("[bold bright_green]Main workflow[/bold bright_green]")
+    console.print("  [bright_white]docs-for-me changes --ai none --out changes-guide.md[/bright_white]")
+    console.print("  [dim]Review your diff, understand changed flows, and copy the generated commit message.[/dim]\n")
+
+    commands = Table(
+        title="Commands",
+        box=box.ROUNDED,
+        border_style="cyan",
+        header_style="bold bright_cyan",
+        show_lines=True,
+    )
+    commands.add_column("Use Case", style="bold white", no_wrap=True)
+    commands.add_column("Command", style="bright_white")
+    commands.add_row("Pre-commit guide", "docs-for-me changes --ai none --out changes-guide.md")
+    commands.add_row("Staged changes", "docs-for-me changes --staged --ai none --out changes-guide.md")
+    commands.add_row("AI changes guide", "docs-for-me changes --ai opencode --out changes-ai-guide.md")
+    commands.add_row("One file", 'docs-for-me file "PATH" --ai none --out file-guide.md')
+    commands.add_row("Folder", 'docs-for-me folder "PATH" --ai none --out folder-guide.md')
+    console.print(commands)
+
+    commit = Table(
+        title="Commit Message Output",
+        box=box.SIMPLE,
+        border_style="yellow",
+        header_style="bold bright_yellow",
+        show_lines=False,
+    )
+    commit.add_column("Part", style="bold white", no_wrap=True)
+    commit.add_column("What It Gives You", style="bright_white")
+    commit.add_row("Subject", "A precise first line for the commit.")
+    commit.add_row("Body", "Added, Updated, Refactored, and Removed sections when visible.")
+    commit.add_row("Context", "Affected files, visible changed areas, and diff size.")
+    console.print(commit)
+
+    modes = Table(
+        title="AI Choices",
+        box=box.ROUNDED,
+        border_style="green",
+        header_style="bold bright_green",
+        show_lines=False,
+    )
+    modes.add_column("Mode", style="bold white", no_wrap=True)
+    modes.add_column("Use When", style="bright_white")
+    modes.add_row("--ai none", "You want local, fast docs with no AI provider.")
+    modes.add_row("--ai opencode", "You want OpenCode to write a deeper guide.")
+    console.print(modes)
+
+    console.print("[bold bright_yellow]Install[/bold bright_yellow]")
+    console.print("  [bright_white]npm install -g docs-for-me[/bright_white]")
+    console.print("[bold bright_yellow]One-time trial[/bold bright_yellow]")
+    console.print("  [bright_white]npx docs-for-me --help[/bright_white]\n")
+    console.print("[dim]Tip: wrap paths in quotes when they contain spaces or special characters.[/dim]")
+    console.print("[dim]Commands: file, folder, changes[/dim]")
+    console.print()
 
 
 @app.command()

@@ -6,4 +6,5 @@ def test_changes_prompt_requires_accuracy_note_and_commit_message() -> None:
 
     assert '"Accuracy Note" section' in prompt
     assert "copy-paste-ready commit message" in prompt
-    assert "Do not only list raw code changes" in prompt
+    assert "Do not list raw code lines as evidence" in prompt
+    assert "which functions or areas changed" in prompt

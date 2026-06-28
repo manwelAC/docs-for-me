@@ -72,9 +72,11 @@ def _compact_prompt_for_files(prompt: str) -> str:
         return (
             "Return a Markdown guide for the attached Git diff. "
             "Do not create files. Do not edit files. Do not ask questions. "
-            "Explain what changed in plain language for programmers. "
-            "Include these sections: Summary, What Changed, Commit Message, Files Checked, and Accuracy Note. "
+            "Explain what changed in plain language for programmers. Focus on changed flows, affected files, and changed functions or areas. "
+            "Do not list raw diff lines as evidence. Do not quote code unless absolutely necessary. "
+            "Include these sections: Summary, What Changed, Changed Areas, Commit Message, Files Checked, and Accuracy Note. "
             "The Commit Message section must contain one copy-paste-ready commit message inside a text code block. "
+            "Use a precise subject line plus a short body that explains what should be committed, which flow changed, and which files or areas are involved. "
             "End with this exact Accuracy Note: "
             "\"This guide is generated from the Git diff and may miss context that is only clear from running the app, reading related files, or knowing the intended behavior. Review the summary and commit message before committing.\" "
             "Base the guide on the attached diff only."
@@ -85,8 +87,9 @@ def _compact_prompt_for_files(prompt: str) -> str:
             "Return Markdown documentation for the attached folder context. "
             "Do not create files. Do not edit files. Do not ask questions. "
             "Write it like a practical programmer guide, not an audit. "
-            "Include these sections: Overview, What Is Inside, Main Areas, Important Files, How It Fits Together, and Reading Guide. "
-            "Do not include Risks or Editing Notes. "
+            "Explain what the files are for, how they connect, and what role each important file plays in the folder. "
+            "Include these sections: Overview, System Map, Main Areas, File Roles And Connections, How It Fits Together, and Reading Guide. "
+            "Do not include raw source code, code snippets, Risks, or Editing Notes. "
             "Base the documentation on the attached folder context only."
         )
 

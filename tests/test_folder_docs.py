@@ -10,6 +10,7 @@ class RecordingProvider(AIProvider):
 
     def __init__(self) -> None:
         self.files: list[str] | None = None
+        self.expected_parent: Path | None = None
 
     def generate(
         self,
@@ -20,9 +21,13 @@ class RecordingProvider(AIProvider):
         self.files = files
         assert files is not None
         assert len(files) == 1
-        context = Path(files[0]).read_text(encoding="utf-8")
-        assert "## Sampled File Contents" in context
+        context_path = Path(files[0])
+        if self.expected_parent is not None:
+            assert context_path.resolve().is_relative_to(self.expected_parent.resolve())
+        context = context_path.read_text(encoding="utf-8")
+        assert "## Role Summaries" in context
         assert "bookings.ts" in context
+        assert "```" not in context
         return AIResponse("# AI folder guide\n", used_ai=True)
 
 
@@ -55,7 +60,10 @@ fetch("/api/guests")
     assert "bookings" in markdown
     assert "guests" in markdown
     assert "/api/bookings" in markdown
-    assert "## Key Files" in markdown
+    assert "## Important Entry Points" in markdown
+    assert "## System Map" in markdown
+    assert "## File Roles And Connections" in markdown
+    assert "Connects to:" in markdown
 
 
 def test_document_folder_uses_single_context_file_for_ai(tmp_path: Path) -> None:
@@ -64,6 +72,7 @@ def test_document_folder_uses_single_context_file_for_ai(tmp_path: Path) -> None
     (app / "bookings.ts").write_text('const title = "Bookings"\n', encoding="utf-8")
 
     provider = RecordingProvider()
+    provider.expected_parent = app
     markdown = document_folder(app, provider)
 
     assert markdown == "# AI folder guide\n"
@@ -100,4 +109,7 @@ def test_document_folder_adapts_large_folder_into_main_areas(tmp_path: Path) -> 
     assert "### Http" in markdown
     assert "### Models" in markdown
     assert "### Services" in markdown
+    assert "## System Map" in markdown
+    assert "File roles and connections" in markdown
+    assert "## Reading Guide" in markdown
     assert "Large folder detected" in "\n".join(messages)

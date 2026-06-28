@@ -5,15 +5,18 @@
 <h1 align="center">docs-for-me</h1>
 
 <p align="center">
-  A CLI that creates programmer-friendly guides for files, folders, and Git changes.
+  A CLI that turns Git changes into programmer-friendly review guides and commit-ready messages.
 </p>
 
-It is meant for the everyday developer moment where you want to know:
+`docs-for-me` is built for the everyday developer moment right before a commit:
 
-- What is in this file?
-- What does this folder contain?
 - What did I change before I commit?
-- What commit message can I copy after reviewing the changes?
+- What files and flows were affected?
+- What should the commit message say?
+- What can I paste into `git commit` after I review it?
+
+It can also create guides for specific files and folders, but the main workflow is
+helping you understand Git changes without manually rereading every diff line.
 
 The output is Markdown, so it can be read in a terminal, saved beside a project,
 or deleted after review.
@@ -57,13 +60,17 @@ Linux builds can be added after the Windows release flow is stable.
 
 ## What It Does
 
-`docs-for-me` supports three main tasks:
+`docs-for-me` supports three tasks:
 
 ```bash
+docs-for-me changes
 docs-for-me file <path>
 docs-for-me folder <path>
-docs-for-me changes
 ```
+
+The `changes` command is the main one. It reads your Git diff, explains the
+change in plain language, groups related files, and writes a commit message you
+can copy after reviewing.
 
 It has two modes:
 
@@ -75,25 +82,13 @@ when you want a more natural explanation.
 
 ## Basic Usage
 
-Document one file:
-
-```powershell
-docs-for-me file "app/(dashboard)/bookings/page.tsx" --ai none --out bookings-doc.md (--out is the output/ file name of your docs)
-```
-
-Document one folder:
-
-```powershell
-docs-for-me folder app --ai none --out app-docs.md
-```
-
-Explain unstaged Git changes:
+Create a pre-commit guide for unstaged changes:
 
 ```powershell
 docs-for-me changes --ai none --out changes-guide.md
 ```
 
-Explain staged Git changes:
+Create a guide for staged changes:
 
 ```powershell
 docs-for-me changes --staged --ai none --out changes-guide.md
@@ -103,6 +98,24 @@ Compare changes since a branch or ref:
 
 ```powershell
 docs-for-me changes --since main --ai none --out changes-guide.md
+```
+
+Use OpenCode for a more natural explanation:
+
+```powershell
+docs-for-me changes --ai opencode --out changes-ai-guide.md
+```
+
+Document one file:
+
+```powershell
+docs-for-me file "app/(dashboard)/bookings/page.tsx" --ai none --out bookings-doc.md
+```
+
+Document one folder:
+
+```powershell
+docs-for-me folder app --ai none --out app-docs.md
 ```
 
 ## OpenCode Mode
@@ -166,22 +179,53 @@ prebuilt/win32-x64/docs-for-me.exe
 When publishing to npm, that executable is included so users can run
 `docs-for-me ...` after `npm install -g docs-for-me` without setting up Python.
 
-If that line appears, `docs-for-me` fell back to static mode.
-
 ## Git Changes Guide
 
-The `changes` command is designed for pre-commit review. It summarizes the diff,
-lists changed files, explains what the changes appear to do, and includes a
-copy-paste-ready commit message.
+The `changes` command is designed for pre-commit review and commit-message prep.
+It summarizes the diff, explains changed flows, groups related areas, lists the
+files checked, and includes a copy-paste-ready commit message.
 
-Example output includes:
+The commit message is intentionally more than a tiny one-line label. It includes
+a subject plus a short body with categories such as `Added`, `Updated`,
+`Refactored`, and `Removed` when those categories are visible from the diff.
+
+Example commit message section:
 
 ```text
-update: search behavior and plan limits
+update: support grouped filtering in changed controllers
+
+Updated:
+- changed controllers: filtering now uses grouped matching instead of only direct matching.
+
+Refactored:
+- shared lookup files: related values now come from a shared lookup path.
+
+Affected files: app/Http/Controllers/ExampleController.php, app/Services/ExampleService.php.
+
+Visible changed areas: example controller::applyFilter, example service::resolveLookup.
+
+Diff size: 2 file(s), 40 added line(s), 18 removed line(s).
+```
+
+Example commit command:
+
+```powershell
+git commit -m "update: support grouped filtering in changed controllers" -m "Updated: - changed controllers: filtering now uses grouped matching instead of only direct matching. Affected files: app/Http/Controllers/ExampleController.php. Diff size: 1 file(s), 20 added line(s), 8 removed line(s)."
 ```
 
 Review the generated guide before committing. The guide is meant to save time,
 not replace your own final check.
+
+### Local vs AI Changes
+
+`--ai none` does not use machine learning. It uses adaptive static analysis:
+it reads the diff, detects general change patterns, derives names from files and
+symbols, and builds the guide locally.
+
+`--ai opencode` sends the Git diff to OpenCode and asks it to produce the same
+kind of guide with a more natural explanation and a subject-plus-body commit
+message. The OpenCode prompt is configured to include `Summary`, `What Changed`,
+`Changed Areas`, `Commit Message`, `Files Checked`, and `Accuracy Note`.
 
 ## Progress Messages
 

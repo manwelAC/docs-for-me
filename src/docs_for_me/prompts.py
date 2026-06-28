@@ -48,9 +48,12 @@ Files:
 Explain:
 - what this folder appears to contain
 - the main areas inside it
-- important files and responsibilities
-- how the parts likely fit together
+- important files and their role in the folder
+- how files connect to routes, APIs, models, services, UI, data, or other dependencies
+- how the parts fit together as a developer-readable system map
 - where a programmer should start reading
+
+Do not include raw source code or code blocks. Describe roles and connections in words.
 """
 
 
@@ -62,14 +65,17 @@ Explain these Git changes for a developer.
 Mode: {mode}
 
 Include:
-- a "Summary" section that explains what changed in plain language
+- a "Summary" section that explains the main changed flow in plain language
 - a "What Changed" section that describes each changed file in words a programmer can understand
-- a "Commit Message" section with one copy-paste-ready commit message in a text code block
+- a "Changed Areas" section that groups related file changes into user/developer-facing flows
+- changed functions, methods, or important code areas when visible
+- a "Commit Message" section with one copy-paste-ready commit message in a text code block. Use a precise subject line plus a short body that explains what should be committed, which flow changed, and which files or areas are involved
 - a "Files Checked" section
 - an "Accuracy Note" section at the end with this exact note:
   "This guide is generated from the Git diff and may miss context that is only clear from running the app, reading related files, or knowing the intended behavior. Review the summary and commit message before committing."
 
-Do not only list raw code changes. Explain what the changes mean.
+Do not list raw code lines as evidence. Do not quote the diff unless absolutely necessary.
+Explain what changed, what flow changed, which files were involved, and which functions or areas changed.
 
 Diff:
 ```diff
