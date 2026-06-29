@@ -27,6 +27,26 @@ index 111..222 100644
     assert "Evidence from added or updated lines" not in markdown
 
 
+def test_fallback_changes_doc_reports_local_progress() -> None:
+    diff = """
+diff --git a/app/example/page.tsx b/app/example/page.tsx
+index 111..222 100644
+--- a/app/example/page.tsx
++++ b/app/example/page.tsx
+@@ -1 +1,2 @@
++const title = "Example"
+"""
+    messages: list[str] = []
+
+    _fallback_changes_doc(diff, "none", staged=False, since=None, on_progress=messages.append)
+
+    assert "Parsing changed files and changed lines..." in messages
+    assert "Analyzing changed file 1: app/example/page.tsx" in messages
+    assert "Detected 1 changed line(s) across 1 file(s)." in messages
+    assert any(message.startswith("Scoring ") for message in messages)
+    assert "Rendering developer-readable Markdown..." in messages
+
+
 def test_fallback_changes_doc_detects_search_commit_theme() -> None:
     diff = """
 diff --git a/app/(dashboard)/bookings/page.tsx b/app/(dashboard)/bookings/page.tsx
@@ -51,12 +71,51 @@ index 333..444 100644
 
     markdown = _fallback_changes_doc(diff, "none", staged=False, since=None)
 
-    assert "separates typing from applying the value" in markdown
-    assert "explicit action" in markdown
-    assert "update: apply input changes through an explicit action" in markdown
+    assert "Input changed around separate editable value and keyboard apply handler" in markdown
+    assert "Visible signals:" not in markdown
+    assert "Confidence:" not in markdown
+    assert "keyboard apply handler" in markdown
+    assert "state-related behavior changed" not in markdown
+    assert "records may move through or display different states" not in markdown
+    assert "update: update input in bookings and guests" in markdown
     assert "Updated:" in markdown
-    assert "- bookings and guests: input is now applied through an explicit action instead of changing results immediately." in markdown
+    assert "- bookings and guests: updates input around separate editable value and keyboard apply handler." in markdown
     assert "Evidence from added or updated lines" not in markdown
+
+
+def test_fallback_changes_doc_does_not_overclaim_react_local_state() -> None:
+    diff = """
+diff --git a/app/(dashboard)/payments/page.tsx b/app/(dashboard)/payments/page.tsx
+index 111..222 100644
+--- a/app/(dashboard)/payments/page.tsx
++++ b/app/(dashboard)/payments/page.tsx
+@@ -1,3 +1,6 @@
++const [draftSearch, setDraftSearch] = useState(search);
++onKeyDown={(event) => event.key === "Enter" && setSearch(draftSearch.trim())}
+-value={search}
++value={draftSearch}
+diff --git a/app/page.tsx b/app/page.tsx
+index 333..444 100644
+--- a/app/page.tsx
++++ b/app/page.tsx
+@@ -1,3 +1,4 @@
+-<main className="bg-white">
++<main className="bg-emerald-800">
++  <section>Architecture</section>
+"""
+
+    markdown = _fallback_changes_doc(diff, "none", staged=False, since=None)
+
+    assert "input changed around separate editable value and keyboard apply handler" in markdown.lower()
+    assert "Visible signals:" not in markdown
+    assert "Confidence:" not in markdown
+    assert "separate editable value" in markdown
+    assert "keyboard apply handler" in markdown
+    assert "presentation changed" in markdown.lower()
+    assert "state-related behavior changed" not in markdown
+    assert "records may move through or display different states" not in markdown
+    assert "The affected concepts are behavior, const" not in markdown
+    assert "changed (dashboard)" not in markdown
 
 
 def test_fallback_changes_doc_summarizes_branch_filter_flow() -> None:
@@ -79,14 +138,13 @@ index 111..222 100644
 
     markdown = _fallback_changes_doc(diff, "none", staged=False, since=None)
 
-    assert "Filtering changed from direct single-value matching to grouped matching" in markdown
+    assert "Filtering changed from direct matching with where to grouped matching with wherein" in markdown
     assert "expenses report controller" in markdown
     assert "Evidence from added or updated lines" not in markdown
     assert "$query->whereIn" not in markdown
-    assert "filtering now uses grouped matching instead of only direct matching" in markdown
-    assert "update: support grouped filtering in expenses report controller" in markdown
+    assert "update: update filtering in expenses report controller" in markdown
     assert "Updated:" in markdown
-    assert "- expenses report controller: filtering now uses grouped matching instead of only direct matching." in markdown
+    assert "- expenses report controller: updates filtering from direct matching with where to grouped matching with wherein." in markdown
 
 
 def test_fallback_changes_doc_avoids_vague_existing_behavior_summary() -> None:
@@ -109,15 +167,20 @@ index 111..222 100644
 
     assert "updates existing behavior" not in markdown
     assert "add product controller" in markdown
-    assert "filtering now uses grouped matching instead of only direct matching" in markdown
+    assert "filtering changed from direct matching with where to grouped matching with wherein" in markdown.lower()
     assert "$query->whereIn" not in markdown
-    assert "update: support grouped filtering in add product controller" in markdown
+    assert "update: update filtering in add product controller" in markdown
     assert "Updated:" in markdown
     assert "Visible changed areas: add product controller::storeProduct." in markdown
 
 
 def test_change_checker_has_no_project_specific_analysis_terms() -> None:
-    source = Path("src/docs_for_me/git/change_docs.py").read_text(encoding="utf-8").lower()
+    source = "\n".join(
+        [
+            Path("src/docs_for_me/git/change_docs.py").read_text(encoding="utf-8").lower(),
+            Path("src/docs_for_me/analyzer.py").read_text(encoding="utf-8").lower(),
+        ]
+    )
 
     for term in [
         "branch",

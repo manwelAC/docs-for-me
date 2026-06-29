@@ -1,7 +1,7 @@
 {
   "name": "docs-for-me",
-  "version": "0.1.6",
-  "description": "Create programmer-friendly docs for files, folders, and Git changes.",
+  "version": "0.1.7",
+  "description": "Create programmer-friendly Git change guides and commit messages.",
   "license": "MIT",
   "author": "John Manuel A. Cuerdo",
   "homepage": "https://github.com/manwelAC/docs-for-me#readme",

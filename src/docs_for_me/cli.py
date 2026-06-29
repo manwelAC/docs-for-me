@@ -9,8 +9,6 @@ from rich.table import Table
 from rich.text import Text
 
 from docs_for_me.ai import build_provider
-from docs_for_me.core.file_docs import document_file
-from docs_for_me.core.folder_docs import document_folder
 from docs_for_me.git.change_docs import document_changes
 from docs_for_me.render.markdown import write_markdown
 from docs_for_me.render.status import StatusReporter
@@ -20,7 +18,7 @@ APP_HELP = """
 docs-for-me
 ===========
 
-Make readable Markdown guides for files, folders, and Git changes.
+Make readable Markdown guides for Git changes.
 
 \b
 Install once:
@@ -28,10 +26,6 @@ Install once:
   npm install -g docs-for-me
 
 Start here:
-
-  docs-for-me file PATH --ai none --out file-guide.md
-
-  docs-for-me folder PATH --ai none --out folder-guide.md
 
   docs-for-me changes --ai none --out changes-guide.md
 
@@ -47,7 +41,7 @@ One-time trial:
 
   npx docs-for-me --help
 
-Tip: wrap paths in quotes when they contain spaces or special characters.
+Tip: use --staged when you want to explain only staged changes.
 """
 
 console = Console()
@@ -64,7 +58,7 @@ def main(
     ctx: typer.Context,
     help_requested: bool = typer.Option(False, "--help", "-h", help="Show help and exit.", is_eager=True),
 ) -> None:
-    """Create docs for files, folders, and Git changes."""
+    """Create docs for Git changes."""
     if help_requested or ctx.invoked_subcommand is None:
         _render_help()
         raise typer.Exit()
@@ -102,8 +96,6 @@ def _render_help() -> None:
     commands.add_row("Pre-commit guide", "docs-for-me changes --ai none --out changes-guide.md")
     commands.add_row("Staged changes", "docs-for-me changes --staged --ai none --out changes-guide.md")
     commands.add_row("AI changes guide", "docs-for-me changes --ai opencode --out changes-ai-guide.md")
-    commands.add_row("One file", 'docs-for-me file "PATH" --ai none --out file-guide.md')
-    commands.add_row("Folder", 'docs-for-me folder "PATH" --ai none --out folder-guide.md')
     console.print(commands)
 
     commit = Table(
@@ -137,63 +129,9 @@ def _render_help() -> None:
     console.print("  [bright_white]npm install -g docs-for-me[/bright_white]")
     console.print("[bold bright_yellow]One-time trial[/bold bright_yellow]")
     console.print("  [bright_white]npx docs-for-me --help[/bright_white]\n")
-    console.print("[dim]Tip: wrap paths in quotes when they contain spaces or special characters.[/dim]")
-    console.print("[dim]Commands: file, folder, changes[/dim]")
+    console.print("[dim]Tip: use --staged when you want to explain only staged changes.[/dim]")
+    console.print("[dim]Command: changes[/dim]")
     console.print()
-
-
-@app.command()
-def file(
-    path: Path = typer.Argument(..., exists=True, file_okay=True, dir_okay=False),
-    out: Optional[Path] = typer.Option(None, "--out", "-o", help="Write Markdown to this file."),
-    ai: str = typer.Option("opencode", "--ai", help="AI provider: opencode or none."),
-    model: Optional[str] = typer.Option(None, "--model", help="Model name for the AI provider."),
-    quiet: bool = typer.Option(False, "--quiet", "-q", help="Hide progress messages."),
-) -> None:
-    """
-    Create a guide for one file.
-
-    Example:
-
-      docs-for-me file ".\\app\\Http\\Controllers\\Api\\AnalyticsController.php" --ai none --out analytics-guide.md
-    """
-    status = StatusReporter(quiet=quiet)
-    status.step(f"Reading file: {path}")
-    provider = build_provider(ai, model=model)
-    status.step(f"Preparing documentation with provider: {provider.name}")
-    if provider.name != "none":
-        status.step("Waiting for AI response. This can take a moment...")
-    markdown = document_file(path, provider, on_progress=status.step)
-    status.step("Writing Markdown output")
-    write_markdown(markdown, out, quiet=quiet)
-    status.done("Documentation ready.")
-
-
-@app.command()
-def folder(
-    path: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True),
-    out: Optional[Path] = typer.Option(None, "--out", "-o", help="Write Markdown to this file."),
-    ai: str = typer.Option("opencode", "--ai", help="AI provider: opencode or none."),
-    model: Optional[str] = typer.Option(None, "--model", help="Model name for the AI provider."),
-    quiet: bool = typer.Option(False, "--quiet", "-q", help="Hide progress messages."),
-) -> None:
-    """
-    Create a guide for one folder.
-
-    Example:
-
-      docs-for-me folder ".\\app\\Http\\Controllers\\Api" --ai none --out api-guide.md
-    """
-    status = StatusReporter(quiet=quiet)
-    status.step(f"Scanning folder: {path}")
-    provider = build_provider(ai, model=model)
-    status.step(f"Preparing folder guide with provider: {provider.name}")
-    if provider.name != "none":
-        status.step("Waiting for AI response. Large folders may take longer...")
-    markdown = document_folder(path, provider, on_progress=status.step)
-    status.step("Writing Markdown output")
-    write_markdown(markdown, out, quiet=quiet)
-    status.done("Folder guide ready.")
 
 
 @app.command()

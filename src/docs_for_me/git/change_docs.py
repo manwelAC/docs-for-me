@@ -4,6 +4,7 @@ import tempfile
 from pathlib import Path
 
 from docs_for_me.ai.base import AIProvider, AIResponse, ProgressCallback
+from docs_for_me.analyzer import ChangeSignal, detect_line_signals
 from docs_for_me.git.diff_reader import read_diff
 from docs_for_me.prompts import build_changes_prompt
 
@@ -16,6 +17,7 @@ class FileChange:
     added_hints: list[str] = field(default_factory=list)
     removed_hints: list[str] = field(default_factory=list)
     functions: list[str] = field(default_factory=list)
+    signals: list[ChangeSignal] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -25,6 +27,7 @@ class ChangePattern:
     file_phrase: str
     commit_phrase: str
     area_phrase: str
+    confidence: str = "Medium"
 
 
 @dataclass(frozen=True)
@@ -44,6 +47,8 @@ def document_changes(
     since: str | None = None,
     on_progress: ProgressCallback | None = None,
 ) -> str:
+    if on_progress:
+        on_progress("Reading Git diff...")
     diff = read_diff(staged=staged, since=since)
     prompt = build_changes_prompt(diff, staged=staged, since=since)
     ai_response = _generate_ai_changes(provider, prompt, diff, on_progress)
@@ -51,7 +56,7 @@ def document_changes(
     if ai_response.used_ai and ai_response.text:
         return ai_response.text
 
-    return _fallback_changes_doc(diff, provider.name, staged=staged, since=since)
+    return _fallback_changes_doc(diff, provider.name, staged=staged, since=since, on_progress=on_progress)
 
 
 def _generate_ai_changes(
@@ -69,14 +74,28 @@ def _generate_ai_changes(
         return provider.generate(prompt, files=[str(diff_path)], on_progress=on_progress)
 
 
-def _fallback_changes_doc(diff: str, provider_name: str, staged: bool, since: str | None) -> str:
+def _fallback_changes_doc(
+    diff: str,
+    provider_name: str,
+    staged: bool,
+    since: str | None,
+    on_progress: ProgressCallback | None = None,
+) -> str:
     title = "Git Changes"
     mode = f"since `{since}`" if since else "staged changes" if staged else "unstaged changes"
 
     if not diff.strip():
         return f"# {title}\n\nNo {mode} were found.\n"
 
-    changes = _parse_file_changes(diff)
+    if on_progress:
+        on_progress("Parsing changed files and changed lines...")
+    changes = _parse_file_changes(diff, on_progress=on_progress)
+    if on_progress:
+        changed_lines = sum(change.added + change.removed for change in changes)
+        signal_count = sum(len(change.signals) for change in changes)
+        on_progress(f"Detected {changed_lines} changed line(s) across {len(changes)} file(s).")
+        on_progress(f"Scoring {signal_count} local detector signal(s)...")
+        on_progress("Rendering developer-readable Markdown...")
     added = sum(change.added for change in changes)
     removed = sum(change.removed for change in changes)
     files = [change.path for change in changes]
@@ -294,10 +313,12 @@ def _describe_file_change(change: FileChange) -> str:
     pattern = _change_pattern(change)
 
     if pattern:
-        detail = _changed_concept_text(change)
-        if detail:
-            return f"This file changes {topic}: {pattern.file_phrase}. The affected concepts are {detail}."
-        return f"This file changes {topic}: {pattern.file_phrase}."
+        sentences = [f"This file updates {topic}."]
+        sentences.append(f"It {pattern.file_phrase}.")
+        function_text = ", ".join(f"`{function}`" for function in change.functions[:4])
+        if function_text:
+            sentences.append(f"The changed code area includes {function_text}.")
+        return " ".join(sentences)
     if change.functions:
         function_text = ", ".join(f"`{function}`" for function in change.functions[:4])
         story = _infer_change_story(change, topic)
@@ -315,10 +336,20 @@ def _describe_file_change(change: FileChange) -> str:
 def _infer_change_story(change: FileChange, topic: str) -> str:
     terms = _change_terms(change)
 
-    if _has_any(terms, {"query", "where", "wherein", "filter", "search"}):
+    if _has_any(terms, {"query", "where", "wherein", "filter"}):
         return (
             f"This file changes how {topic} builds or applies its data filtering. "
             "The impact is that the returned records may now include a different set of results based on the updated filter rules."
+        )
+    if _has_any(terms, {"input", "search", "keydown", "enter", "draft"}):
+        return (
+            f"This file changes input or search handling in {topic}. "
+            "The exact user-facing behavior should be reviewed in context, but the visible diff points to how values are edited or applied."
+        )
+    if _has_any(terms, {"markup", "style", "class", "classname", "layout"}):
+        return (
+            f"This file changes markup or presentation in {topic}. "
+            "The visible diff mostly points to UI structure or styling rather than business logic."
         )
 
     if change.functions:
@@ -433,6 +464,8 @@ def _file_topic(path: str) -> str:
     meaningful = []
 
     for part in parts:
+        if part.startswith("(") and part.endswith(")"):
+            continue
         stem = part.rsplit(".", 1)[0].strip("()[]{}")
         if stem in {"app", "src", "page", "index", "layout"}:
             continue
@@ -462,6 +495,7 @@ def _topics_from_hints(hints: list[str]) -> list[str]:
                 "function",
                 "return",
                 "class",
+                "classname",
                 "import",
                 "export",
                 "true",
@@ -470,6 +504,13 @@ def _topics_from_hints(hints: list[str]) -> list[str]:
                 "changed",
                 "value",
                 "text",
+                "behavior",
+                "binding",
+                "input",
+                "local",
+                "markup",
+                "presentation",
+                "state",
             }:
                 continue
             if cleaned not in topics:
@@ -490,6 +531,20 @@ def _change_terms(change: FileChange) -> set[str]:
             "changed",
             "text",
             "value",
+            "behavior",
+            "binding",
+            "class",
+            "classname",
+            "code",
+            "const",
+            "draft",
+            "event",
+            "input",
+            "local",
+            "markup",
+            "presentation",
+            "state",
+            "style",
             "true",
             "false",
             "null",
@@ -507,7 +562,30 @@ def _has_any(terms: set[str], expected: set[str]) -> bool:
 
 def _important_change_terms(terms: set[str]) -> list[str]:
     ignored = {
+        "action",
+        "behavior",
+        "bg",
+        "class",
+        "classname",
+        "cleartimeout",
+        "commitsearch",
+        "const",
+        "div",
+        "draft",
+        "event",
+        "input",
+        "line",
+        "local",
+        "markup",
+        "presentation",
         "query",
+        "search",
+        "set",
+        "state",
+        "style",
+        "text",
+        "use",
+        "value",
         "where",
         "wherein",
         "this",
@@ -531,43 +609,125 @@ def _human_join(values: list[str]) -> str:
 
 
 def _change_pattern(change: FileChange) -> ChangePattern | None:
-    added = _hints_text(change.added_hints)
-    removed = _hints_text(change.removed_hints)
-    combined = f"{added} {removed}"
+    signals = _change_signals(change)
+    if not signals:
+        return None
 
-    if "grouped matching" in added and ("direct matching" in removed or "where(" in removed):
-        return ChangePattern(
-            name="grouped filtering",
-            summary_phrase="Filtering changed from direct single-value matching to grouped matching, so the affected flows can include a wider matching set.",
-            file_phrase="filtering now uses grouped matching instead of only direct matching",
-            commit_phrase="support grouped filtering",
-            area_phrase="Filtering flows now appear to support grouped matches instead of only one direct match.",
-        )
-    if "explicit apply action" in added or ("enter" in combined and "search" in combined):
-        return ChangePattern(
-            name="explicit apply behavior",
-            summary_phrase="Input behavior now separates typing from applying the value, so users can make changes first and apply them with an explicit action.",
-            file_phrase="input is now applied through an explicit action instead of changing results immediately",
-            commit_phrase="apply input changes through an explicit action",
-            area_phrase="Input-driven flows now separate editing a value from applying that value.",
-        )
-    if "shared lookup" in added or "shared lookup" in removed:
-        return ChangePattern(
-            name="shared lookup behavior",
-            summary_phrase="Lookup behavior was consolidated around a shared value or helper, reducing separate paths for the same decision.",
-            file_phrase="related values now come from a shared lookup path",
-            commit_phrase="consolidate shared lookup behavior",
-            area_phrase="Lookup or display flows now reuse a shared source of truth.",
-        )
-    if "state value" in combined or "status value" in combined:
-        return ChangePattern(
-            name="state handling",
-            summary_phrase="State handling changed for the affected flow, so records may move through or display different states.",
-            file_phrase="state-related behavior changed for this workflow",
-            commit_phrase="update state handling",
-            area_phrase="State-related flows now make or show different state decisions.",
-        )
-    return None
+    family = _dominant_signal_family(signals)
+    if _signal_family_score(signals, family) < 0.65:
+        return None
+    evidence = _signal_evidence_phrase(signals, family)
+    confidence = _signal_confidence(signals, family)
+    label = family.replace("_", " ")
+
+    return ChangePattern(
+        name=f"{family} change",
+        summary_phrase=_compose_summary_phrase(label, evidence, confidence),
+        file_phrase=_compose_file_phrase(label, evidence),
+        commit_phrase=_compose_commit_phrase(label, evidence),
+        area_phrase=_compose_area_phrase(label, evidence, confidence),
+        confidence=confidence,
+    )
+
+
+def _change_signals(change: FileChange) -> list[ChangeSignal]:
+    return change.signals
+
+
+def _dominant_signal_family(signals: list[ChangeSignal]) -> str:
+    scores: dict[str, float] = {}
+
+    for signal in signals:
+        scores[signal.family] = scores.get(signal.family, 0.0) + _signal_weight(signal)
+
+    return max(scores.items(), key=lambda item: item[1])[0]
+
+
+def _signal_family_score(signals: list[ChangeSignal], family: str) -> float:
+    return sum(_signal_weight(signal) for signal in signals if signal.family == family)
+
+
+def _signal_weight(signal: ChangeSignal) -> float:
+    evidence = signal.evidence.lower()
+
+    if signal.side == "added":
+        weight = signal.confidence
+    else:
+        weight = signal.confidence * 0.7
+
+    if any(term in evidence for term in ["grouped", "direct", "binding", "handler", "editable", "status"]):
+        weight += 0.4
+    if any(term in evidence for term in ["markup", "presentation", "styling"]):
+        weight -= 0.2
+
+    return weight
+
+
+def _signal_evidence_phrase(signals: list[ChangeSignal], family: str) -> str:
+    family_signals = [signal for signal in signals if signal.family == family]
+    added = _dedupe([signal.evidence.lower() for signal in family_signals if signal.side == "added"])
+    removed = _dedupe([signal.evidence.lower() for signal in family_signals if signal.side == "removed"])
+    common = set(added) & set(removed)
+    added_only = [item for item in added if item not in common]
+    removed_only = [item for item in removed if item not in common]
+
+    if added_only and removed_only:
+        return f"from {_human_join(removed_only[:2])} to {_human_join(added_only[:2])}"
+    if added_only:
+        return _human_join(added_only[:3])
+    if removed_only:
+        return f"removed {_human_join(removed_only[:3])}"
+    if added:
+        return _human_join(added[:3])
+    if removed:
+        return _human_join(removed[:3])
+    return "visible diff signals changed"
+
+
+def _signal_confidence(signals: list[ChangeSignal], family: str) -> str:
+    family_signals = [signal for signal in signals if signal.family == family]
+    added = {signal.evidence.lower() for signal in family_signals if signal.side == "added"}
+    removed = {signal.evidence.lower() for signal in family_signals if signal.side == "removed"}
+
+    if added and removed:
+        return "High"
+    if len(added) + len(removed) >= 2:
+        return "Medium"
+    return "Low"
+
+
+def _compose_summary_phrase(label: str, evidence: str, confidence: str) -> str:
+    if evidence == label:
+        return f"{label.title()} changed."
+    if evidence.startswith("from "):
+        return f"{label.title()} changed {evidence}."
+    if evidence.startswith("removed "):
+        return f"{label.title()} {evidence}."
+    return f"{label.title()} changed around {evidence}."
+
+
+def _compose_file_phrase(label: str, evidence: str) -> str:
+    if evidence == label:
+        return f"updates {label}"
+    if evidence.startswith("from "):
+        return f"updates {label} {evidence}"
+    if evidence.startswith("removed "):
+        return f"{evidence} from {label}"
+    return f"updates {label} around {evidence}"
+
+
+def _compose_commit_phrase(label: str, evidence: str) -> str:
+    return f"update {label}"
+
+
+def _compose_area_phrase(label: str, evidence: str, confidence: str) -> str:
+    if evidence == label:
+        return f"{label.title()} areas changed."
+    if evidence.startswith("from "):
+        return f"{label.title()} areas changed {evidence}."
+    if evidence.startswith("removed "):
+        return f"{label.title()} areas {evidence}."
+    return f"{label.title()} areas changed around {evidence}."
 
 
 def _dominant_pattern(changes: list[FileChange]) -> ChangePattern | None:
@@ -625,6 +785,8 @@ def _common_path_role(changes: list[FileChange]) -> str:
     for change in changes:
         parts = [part.lower() for part in change.path.replace("\\", "/").split("/")[:-1]]
         for part in parts:
+            if part.startswith("(") and part.endswith(")"):
+                continue
             readable = _humanize_identifier(part)
             if readable in {"app", "src", "http", "api"} or len(readable) < 3:
                 continue
@@ -642,8 +804,18 @@ def _changed_concept_text(change: FileChange) -> str:
     return _human_join(concepts[:4])
 
 
-def _hints_text(hints: list[str]) -> str:
-    return " ".join(hints).lower()
+def _visible_evidence_text(change: FileChange) -> str:
+    primary_family = _dominant_signal_family(change.signals) if change.signals else ""
+    evidence = [
+        signal.evidence.lower()
+        for signal in change.signals
+        if signal.family == primary_family or (signal.confidence >= 0.65 and signal.detector != "path_pattern")
+    ]
+
+    if change.functions:
+        evidence.extend(f"`{function}`" for function in change.functions[:3])
+
+    return _human_join(_dedupe(evidence)[:4])
 
 
 def _change_themes(changes: list[FileChange]) -> list[str]:
@@ -662,32 +834,7 @@ def _change_themes(changes: list[FileChange]) -> list[str]:
     return themes
 
 
-def _file_has_terms(change: FileChange, terms: list[str]) -> bool:
-    text = " ".join([*change.added_hints, *change.removed_hints]).lower()
-    return all(term in text for term in terms)
-
-
-def _changed_files(diff: str) -> list[str]:
-    files: list[str] = []
-
-    for line in diff.splitlines():
-        if not line.startswith("diff --git "):
-            continue
-
-        parts = line.split()
-        if len(parts) < 4:
-            continue
-
-        path = parts[3]
-        if path.startswith("b/"):
-            path = path[2:]
-        if path not in files:
-            files.append(path)
-
-    return files
-
-
-def _parse_file_changes(diff: str) -> list[FileChange]:
+def _parse_file_changes(diff: str, on_progress: ProgressCallback | None = None) -> list[FileChange]:
     changes: list[FileChange] = []
     current_path: str | None = None
     added = 0
@@ -695,9 +842,11 @@ def _parse_file_changes(diff: str) -> list[FileChange]:
     added_hints: list[str] = []
     removed_hints: list[str] = []
     functions: list[str] = []
+    signals: list[ChangeSignal] = []
+    detected_files = 0
 
     def flush() -> None:
-        nonlocal current_path, added, removed, added_hints, removed_hints, functions
+        nonlocal current_path, added, removed, added_hints, removed_hints, functions, signals
         if current_path is not None:
             changes.append(
                 FileChange(
@@ -707,6 +856,7 @@ def _parse_file_changes(diff: str) -> list[FileChange]:
                     added_hints=added_hints[:8],
                     removed_hints=removed_hints[:6],
                     functions=_dedupe(functions)[:8],
+                    signals=_dedupe_signals(signals),
                 )
             )
         current_path = None
@@ -715,12 +865,16 @@ def _parse_file_changes(diff: str) -> list[FileChange]:
         added_hints = []
         removed_hints = []
         functions = []
+        signals = []
 
     for line in diff.splitlines():
         if line.startswith("diff --git "):
             flush()
             parts = line.split()
             current_path = parts[3][2:] if len(parts) >= 4 and parts[3].startswith("b/") else parts[-1]
+            detected_files += 1
+            if on_progress:
+                on_progress(f"Analyzing changed file {detected_files}: {current_path}")
             continue
 
         if current_path is None:
@@ -729,16 +883,20 @@ def _parse_file_changes(diff: str) -> list[FileChange]:
         if line.startswith("+++") or line.startswith("---"):
             continue
         if line.startswith("+"):
+            line_signals = detect_line_signals(current_path, line[1:], "added")
             added += 1
             functions.extend(_function_names_from_line(line[1:]))
-            added_hints.extend(_semantic_change_hints(line[1:]))
+            signals.extend(line_signals)
+            added_hints.extend(signal.as_hint() for signal in line_signals)
             hint = _readable_change_hint(line[1:])
             if hint:
                 added_hints.append(hint)
         elif line.startswith("-"):
+            line_signals = detect_line_signals(current_path, line[1:], "removed")
             removed += 1
             functions.extend(_function_names_from_line(line[1:]))
-            removed_hints.extend(_semantic_change_hints(line[1:]))
+            signals.extend(line_signals)
+            removed_hints.extend(signal.as_hint() for signal in line_signals)
             hint = _readable_change_hint(line[1:])
             if hint:
                 removed_hints.append(hint)
@@ -763,7 +921,7 @@ def _readable_change_hint(line: str) -> str | None:
             return f"Text or value: `{label}`"
 
     function_match = re.search(r"\b(?:function|const|let|var)\s+([A-Za-z_][A-Za-z0-9_]*)", stripped)
-    if function_match:
+    if function_match and not re.search(r"\buse[A-Z][A-Za-z0-9_]*\s*\(", stripped):
         return f"Code area: `{function_match.group(1)}`"
 
     return f"Line changed: `{stripped}`"
@@ -782,29 +940,6 @@ def _function_names_from_line(line: str) -> list[str]:
     return names
 
 
-def _semantic_change_hints(line: str) -> list[str]:
-    lowered = line.lower()
-    hints: list[str] = []
-
-    if "wherein" in lowered:
-        hints.append("Filtering behavior: grouped matching with `whereIn`")
-    elif "where(" in lowered:
-        hints.append("Filtering behavior: direct matching with `where`")
-
-    if "status" in lowered:
-        hints.append("Status value changed")
-    if "state" in lowered:
-        hints.append("State value changed")
-    if "enter" in lowered and ("key" in lowered or "keydown" in lowered):
-        hints.append("Input behavior: explicit apply action")
-    if "search" in lowered and "input" in lowered:
-        hints.append("Input behavior: separate draft value")
-    if re.search(r"\bget[A-Z][A-Za-z0-9_]*", line) and ("limit" in lowered or "lookup" in lowered):
-        hints.append("Lookup behavior: shared lookup")
-
-    return hints
-
-
 def _looks_readable(value: str) -> bool:
     if value.startswith(("@/", "./", "../", "http://", "https://")):
         return False
@@ -820,4 +955,18 @@ def _dedupe(values: list[str]) -> list[str]:
             continue
         seen.add(value)
         deduped.append(value)
+    return deduped
+
+
+def _dedupe_signals(signals: list[ChangeSignal]) -> list[ChangeSignal]:
+    seen = set()
+    deduped: list[ChangeSignal] = []
+
+    for signal in signals:
+        key = (signal.family, signal.evidence, signal.side, signal.detector)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(signal)
+
     return deduped

@@ -4,6 +4,7 @@ All notable changes to `docs-for-me` will be documented in this file.
 
 ## 0.1.6 - 2026-06-28
 
+- Focus the CLI on Git changes and remove file/folder documentation commands.
 - Remove npm postinstall output to avoid script-approval warnings during install.
 - Keep the improved `docs-for-me --help` screen as the first-run guide.
 
